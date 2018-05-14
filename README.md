@@ -54,6 +54,8 @@ have several ways of getting at this state:
 * [barrier](#barrier-coordinate-multiple-concurrent-operations): coordinate
   multiple concurrent operations
 * [queue/queuev](#queuequeuev-fixed-size-worker-queue): fixed-size worker queue
+* [race](#race-invoke-n-functions-in-parallel-with-one-callback): invoke N
+   functions in parallel, invoke callback at first function to complete
 
 ### parallel: invoke N functions in parallel
 
@@ -771,3 +773,70 @@ This example outputs:
     first task ends
     second task begins
     second task ends
+
+### race: invoke N functions in parallel, with one callback
+
+Synopsis: `race(funcs, callback)`
+
+This function takes an array of input functions and runs them all.  These input
+functions are expected to be asynchronous: they get a "callback" argument and
+should invoke it as `callback(err, result)`.
+
+The callback is invoked at most once, by the first child function to call it.
+Any subsequent invocations are discarded. However, the functions themselves will
+still execute, so it's a good idea to clean them up in your callback with
+`clearTimeout()` or similar.
+
+This function returns a status object as follows:
+
+* `operations`: array corresponding to the input functions, with
+    * `func`: input function,
+    * `status`: "pending", "ok", or "fail",
+    * `err`: returned "err" value, if any, and
+    * `result`: returned "result" value, if any
+* `successes`: "result" field for each of "operations" where
+  "status" == "ok" (in no particular order)
+* `ndone`: number of input operations that have completed
+* `nerrors`: number of input operations that have failed
+
+Note that these values are updated even after the first invocation of the
+callback.
+
+For example:
+
+```js
+$ cat examples/race.js
+var mod_vasync = require('../lib/vasync');
+
+var w = mod_vasync.race([
+    function first(cb) {
+        console.log('initiating first()');
+        setTimeout(function () { cb(null, 'result1'); }, 10);
+    }, function second(cb) {
+        console.log('initiating second()');
+        setTimeout(function () { cb(null, 'result2'); }, 10);
+    }],
+
+    /*
+     * The timeout for first() will expire first, which means we'll get
+     * 'result1' here; mycb will not be called again.
+     */
+    function mycb(err, result) {
+        console.log('result: %s state: %j', result, w);
+    }
+);
+
+console.log('w (start): %j', w);
+$ node examples/race.js
+initiating first()
+initiating second()
+w (start):
+{"operations":[{"funcname":"first","status":"pending"},{"funcname":"second","status":"pending"}],"successes":[],"ndone":0,"nerrors":0}
+result: result1 state:
+{"operations":[{"funcname":"first","status":"ok","err":null,"result":"result1"},{"funcname":"second","status":"pending"}],"successes":["result1"],"ndone":1,"nerrors":0}
+```
+
+Note that "successes" is provided as a convenience and the order of items in
+that array may not correspond to the order of the inputs.  To consume output in
+an ordered manner, you should iterate over "operations" and pick out the result
+from each item.

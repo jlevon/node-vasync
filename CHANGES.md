@@ -2,7 +2,9 @@
 
 ## Not yet released
 
-None yet.
+## v2.3.0
+
+* #39 want race
 
 ## v2.2.0
 
